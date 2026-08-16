@@ -5,7 +5,7 @@ description: Classes shipped in src/
 resource: /src/GTKApplication.php
 tags: [scrapyard-gtk, architecture]
 status: stable
-generated: { by: cursor-agent/grok-4.6, at: "2026-08-16T13:39:00Z" }
+generated: { by: cursor-agent/grok-4.6, at: "2026-08-16T16:57:00Z" }
 verified:
     - { by: human:angel@projectsaturnstudios.com, at: "2026-08-16T13:46:00Z"}
 sources:
@@ -28,7 +28,7 @@ sources:
 | `src/GTKWindowSurface.php` | `GTKWindowSurface` extends `WindowSurface`. Holds content pointer, GMenu state, and pending menu action.[^surface] |
 | `src/Providers/ScrapyardGTKServiceProvider.php` | `register()` and `boot()` are empty.[^provider] |
 
-`GTKApplication::createWindow` builds a `GtkApplicationWindow`, sets title and default size, creates a `GtkGrid` or vertical `GtkBox` as child, wraps `GTKWindowSurface`, and stores it in `$this->windows`.
+`GTKApplication::createWindow` builds a `GtkApplicationWindow`, sets title and default size. Default child is a vertical `GtkBox` (chrome) holding a `GtkFixed` (content). `$asGrid` still uses `GtkGrid` as the window child. Menu bar prepends onto chrome, not into the Fixed.
 
 [^app]: GTKApplication
 [^surface]: GTKWindowSurface

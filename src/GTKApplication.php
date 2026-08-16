@@ -55,14 +55,22 @@ class GTKApplication extends WindowableApplication
         gtk_window_set_title($pointer, $name);
         gtk_window_set_default_size($pointer, $width, $height);
 
-        $content = $asGrid
-            ? gtk_grid_new()
-            : gtk_box_new(Orientation::VERTICAL->value, 0);
+        if ($asGrid) {
+            $content = gtk_grid_new();
+            gtk_window_set_child($pointer, $content);
+            $window = new GTKWindowSurface($name, $pointer, $this->app_pointer, $width, $height, true);
+            $window = $window->setContentPointer($content);
+        } else {
+            $chrome = gtk_box_new(Orientation::VERTICAL->value, 0);
+            $content = gtk_fixed_new();
+            gtk_widget_set_hexpand($content, true);
+            gtk_widget_set_vexpand($content, true);
+            gtk_box_append($chrome, $content);
+            gtk_window_set_child($pointer, $chrome);
+            $window = new GTKWindowSurface($name, $pointer, $this->app_pointer, $width, $height, false);
+            $window = $window->setChromePointer($chrome)->setContentPointer($content);
+        }
 
-        gtk_window_set_child($pointer, $content);
-
-        $window = new GTKWindowSurface($name, $pointer, $this->app_pointer, $asGrid);
-        $window = $window->setContentPointer($content);
         $this->windows->offsetSet($name, $window);
 
         return $this;
