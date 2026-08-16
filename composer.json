@@ -1,0 +1,65 @@
+{
+    "name": "microscrap/scrapyard-gtk",
+    "description": "Linux GTK4 support within ScrapyardIO",
+    "type": "library",
+    "version": "0.8.0",
+    "keywords": [
+        "framework",
+        "scrapyard-io",
+        "appkit",
+        "bindings",
+        "macos"
+    ],
+    "license": "MIT",
+    "homepage": "https://scrapyard-io.projectsaturnstudios.com/ecosystem/microscrap/appkit/0.8.x/overview",
+    "support": {
+        "docs": "https://scrapyard-io.projectsaturnstudios.com/ecosystem/microscrap/appkit/0.8.x/overview",
+        "issues": "https://github.com/microscrap/appkit/issues",
+        "source": "https://github.com/microscrap/appkit"
+    },
+    "authors": [
+        {
+            "name": "Angel Gonzalez",
+            "email": "angel@projectsaturnstudios.com"
+        }
+    ],
+    "require": {
+        "php": "^8.4|^8.5|^8.6",
+        "microscrap/gtk": "^0.7.0"
+    },
+    "require-dev": {
+        "pestphp/pest": "^4"
+    },
+
+    "autoload": {
+        "psr-4": {
+            "Microscrap\\ScrapyardIO\\GTK\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "DeptOfScrapyardRobotics\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "0.8.x-dev"
+        },
+        "scrapyard-io": {
+            "providers": [
+                "Microscrap\\ScrapyardIO\\GTK\\Providers\\ScrapyardGTKServiceProvider"
+            ],
+            "aliases": {
+
+            }
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
