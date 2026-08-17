@@ -62,13 +62,19 @@ class GTKApplication extends WindowableApplication
             $window = $window->setContentPointer($content);
         } else {
             $chrome = gtk_box_new(Orientation::VERTICAL->value, 0);
+            $top = gtk_box_new(Orientation::VERTICAL->value, 0);
+            gtk_widget_set_hexpand($top, true);
+            gtk_widget_set_vexpand($top, false);
             $content = gtk_fixed_new();
             gtk_widget_set_hexpand($content, true);
             gtk_widget_set_vexpand($content, true);
+            gtk_box_append($chrome, $top);
             gtk_box_append($chrome, $content);
             gtk_window_set_child($pointer, $chrome);
             $window = new GTKWindowSurface($name, $pointer, $this->app_pointer, $width, $height, false);
-            $window = $window->setChromePointer($chrome)->setContentPointer($content);
+            $window = $window->setChromePointer($chrome)
+                ->setChromeTopPointer($top)
+                ->setContentPointer($content);
         }
 
         $this->windows->offsetSet($name, $window);
@@ -78,7 +84,14 @@ class GTKApplication extends WindowableApplication
 
     public function pump(): void
     {
-        while (g_main_context_iteration(g_main_context_default(), false)) {}
+        $hadEvents = false;
+        while (g_main_context_iteration(g_main_context_default(), false)) {
+            $hadEvents = true;
+        }
+
+        if (! $hadEvents) {
+            g_main_context_iteration(g_main_context_default(), true);
+        }
     }
 
     public function terminate(): void

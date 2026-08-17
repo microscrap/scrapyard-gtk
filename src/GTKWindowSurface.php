@@ -26,10 +26,16 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
 
     protected ?int $chrome_pointer = null;
 
+    protected ?int $chrome_top_pointer = null;
+
     protected ?string $pending_menu_action = null;
 
     /** @var array<string, bool> */
     protected array $pending_clicks = [];
+
+    protected ?int $alert_pointer = null;
+
+    protected ?int $pending_alert_index = null;
 
     public function __construct(
         string $window_name,
@@ -51,6 +57,17 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
     public function setChromePointer(int $chrome_pointer): static
     {
         $this->chrome_pointer = $chrome_pointer;
+        return $this;
+    }
+
+    public function getChromeTopPointer(): ?int
+    {
+        return $this->chrome_top_pointer;
+    }
+
+    public function setChromeTopPointer(int $chrome_top_pointer): static
+    {
+        $this->chrome_top_pointer = $chrome_top_pointer;
         return $this;
     }
 
@@ -357,6 +374,20 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
             gtk_label_set_xalign($handle, $xalign);
         }
 
+        $fontSize = $this->fontSizeFrom($addl_params);
+        $fontWeight = $this->fontWeightFrom($addl_params);
+        if (! is_null($fontSize) || ! is_null($fontWeight)) {
+            $cssParts = [];
+            if (! is_null($fontSize)) {
+                $cssParts[] = "font-size: {$fontSize}pt";
+            }
+            if (! is_null($fontWeight)) {
+                $cssWeight = ($fontWeight->value + 1) * 100;
+                $cssParts[] = "font-weight: {$cssWeight}";
+            }
+            gtk_widget_apply_css($handle, implode('; ', $cssParts).';');
+        }
+
         gtk_widget_set_size_request($handle, $w, $h);
         gtk_fixed_put($content, $handle, $x, $this->contentY($y, $h));
         $this->rememberView($name, $handle);
@@ -385,14 +416,12 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
             return;
         }
 
-        $chrome = $this->chrome_pointer ?? 0;
-        if ($chrome === 0) {
+        $top = $this->chrome_top_pointer ?? 0;
+        if ($top === 0) {
             return;
         }
 
-        gtk_box_remove($chrome, $content);
-        gtk_box_append($chrome, $this->menubar_widget);
-        gtk_box_append($chrome, $content);
+        gtk_box_append($top, $this->menubar_widget);
     }
 
     /**
@@ -414,5 +443,81 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
         }
 
         return '<Control>'.$keyEquivalent;
+    }
+
+    /**
+     * @throws WindowableException
+     */
+    public function getEntryText(string $name): string
+    {
+        return gtk_entry_get_text($this->viewHandle($name));
+    }
+
+    /**
+     * @throws WindowableException
+     */
+    public function setEntryText(string $name, string $text): static
+    {
+        gtk_entry_set_text($this->viewHandle($name), $text);
+
+        return $this;
+    }
+
+    /**
+     * @throws WindowableException
+     */
+    public function isCheckboxChecked(string $name): bool
+    {
+        return gtk_check_button_get_active($this->viewHandle($name));
+    }
+
+    /**
+     * @throws WindowableException
+     */
+    public function setCheckboxChecked(string $name, bool $checked): static
+    {
+        gtk_check_button_set_active($this->viewHandle($name), $checked);
+
+        return $this;
+    }
+
+    /**
+     * @param  array<int, string>  $buttons
+     * @throws WindowableException
+     */
+    public function showAlert(string $message, string $detail = '', array $buttons = ['OK']): static
+    {
+        if (! is_null($this->alert_pointer)) {
+            throw new WindowableException("An alert is already open on window {$this->window_name}.");
+        }
+
+        $alert = gtk_alert_dialog_new($message);
+        if ($detail !== '') {
+            gtk_alert_dialog_set_detail($alert, $detail);
+        }
+        gtk_alert_dialog_set_buttons($alert, $buttons);
+        gtk_alert_dialog_choose($alert, $this->getPointer(), function (int $index): void {
+            $this->pending_alert_index = $index;
+        });
+        $this->alert_pointer = $alert;
+
+        return $this;
+    }
+
+    public function pollAlert(): ?int
+    {
+        if (is_null($this->pending_alert_index)) {
+            return null;
+        }
+
+        $index = $this->pending_alert_index;
+        $this->pending_alert_index = null;
+
+        if (! is_null($this->alert_pointer)) {
+            g_object_unref($this->alert_pointer);
+            $this->alert_pointer = null;
+        }
+
+        return $index;
     }
 }
