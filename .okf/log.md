@@ -1,5 +1,31 @@
 # Directory Update Log
 
+## 2026-08-17 (closeWindow inherited)
+
+* `GTKApplication` inherits Tubes `closeWindow`. No GTK-only method. After the user closes a window, `close-request` already destroyed the widget; `closeWindow` drops the name from `$this->windows` so `createWindow` can conjure it again.
+
+## 2026-08-17 (label align by x, not size_request)
+
+* Split the fight: GTK `xalign` needs a full-width box; `size_request($w)` makes that box the window minimum so X cannot shrink. Labels now keep natural width (`size_request(-1, $h)`), store Tubes alignment, and `placeLabel` moves `x` inside the given rect (`CENTER` = `boxX + intdiv(boxW - natW, 2)`). `map` re-places once allocated. Buttons/other views still `size_request($w, $h)`. CSS is font-only on labels — no `width` / `min-width` on the widget.
+
+## 2026-08-17 (GTK CSS has no width)
+
+* GTK CSS does not define `width` / `height` (`Theme parser error: No property named "width"`). `applyViewSize` now uses `gtk_widget_set_size_request($w, $h)` for the visual frame and only CSS `min-width: 0px` (plus stored font CSS). Chrome/Fixed already have `min-width: 0px` so the window can still shrink. Full-width labels get `xalign` room again.
+
+## 2026-08-17 (GTK4 close-request + CSS units)
+
+* GTK4 removed `GtkWidget::destroy`. Connecting `destroy` never ran, so `$destroyed` stayed false and `pollResize` / `isClosed` / `close` hit dead pointers (`GTK_IS_WIDGET` CRITICAL). Now `close-request` marks destroyed and returns `false` (same pattern as `proof_vulkan_x11.php`). `close()` marks destroyed before `gtk_window_destroy`.
+* GTK CSS requires units: `min-width: 0` is invalid and dropped. Use `min-width: 0px` on children, chrome, and GtkFixed so the window can shrink below the last child width.
+
+## 2026-08-17 (GTK resize shrink + destroy lifecycle)
+
+* `gtk_widget_set_size_request($w, $h)` on fixed children set **minimum** width and blocked horizontal window shrink after stretch. `applyViewSize` now uses height-only size request (`-1`, `$h`) plus CSS `min-width: 0; width: {$w}px;`. `addLabel` / `addButton` / `addOtherView` / `setViewFrame` use it; label font CSS stored in `$view_css[$name]` for resize.
+* Window `destroy` signal sets `$destroyed`; `isClosed`, `close`, `present`, `pollResize` natives, and `setViewFrame` guard destroyed pointers (fixes CRITICAL warnings and zombie runner after closing window / ^C).
+
+## 2026-08-17 (pollResize / setViewFrame)
+
+* `nativeContentWidth` / `nativeContentHeight` read `gtk_widget_get_width` / `gtk_widget_get_height` on `$content_pointer` (GtkFixed), not the window widget; return `0` when content unset so Tubes `pollResize` ignores pre-allocate. `setViewFrame` uses `gtk_widget_set_size_request` + `gtk_fixed_move` with `contentY`. Throws on GtkGrid.
+
 ## 2026-08-17 (menubar top slot)
 
 * Chrome is now `GtkBox` → empty top `GtkBox` (`chrome_top_pointer`, vexpand false) + `GtkFixed` (`content_pointer`). `ensureMenuBar` appends `GtkPopoverMenuBar` into the top slot. GtkFixed is never `gtk_box_remove`d. Empty top slot stays 0 height when no menu is added.

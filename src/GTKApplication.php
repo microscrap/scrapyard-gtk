@@ -5,16 +5,13 @@ namespace Microscrap\ScrapyardIO\GTK;
 use Fabricate\NutsAndBolts\Collection;
 use Microscrap\Bindings\Gtk\Enums\Orientation;
 use Tubes\Contracts\Windows\Exceptions\OSApplicationException;
+use Tubes\Contracts\Windows\Exceptions\WindowableException;
 use Tubes\Contracts\Windows\WindowSurface;
 use Tubes\Windows\WindowableApplication;
 
 class GTKApplication extends WindowableApplication
 {
     public readonly int $app_pointer;
-
-    protected int $menubar = 0;
-
-    protected ?string $pending_menu_action = null;
 
     public function __construct(
         public readonly string $application_id,
@@ -68,6 +65,8 @@ class GTKApplication extends WindowableApplication
             $content = gtk_fixed_new();
             gtk_widget_set_hexpand($content, true);
             gtk_widget_set_vexpand($content, true);
+            gtk_widget_apply_css($chrome, 'min-width: 0px; min-height: 0px;');
+            gtk_widget_apply_css($content, 'min-width: 0px; min-height: 0px;');
             gtk_box_append($chrome, $top);
             gtk_box_append($chrome, $content);
             gtk_window_set_child($pointer, $chrome);
@@ -97,5 +96,26 @@ class GTKApplication extends WindowableApplication
     public function terminate(): void
     {
         gtk_application_quit($this->app_pointer);
+    }
+
+    public function ownsAboutMenu(): bool
+    {
+        return false;
+    }
+
+    /**
+     * @throws WindowableException
+     */
+    public function toggleAboutMenuHook(): void
+    {
+        throw new WindowableException("GTK application does not own the menu bar. Cannot conjure an about menu from Application.");
+    }
+
+    /**
+     * @throws WindowableException
+     */
+    public function menuPollAction(): string
+    {
+        throw new WindowableException("GTK application does not own the menu bar. Cannot poll menu bar from Application.");
     }
 }

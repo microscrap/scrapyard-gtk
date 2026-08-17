@@ -37,6 +37,17 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
 
     protected ?int $pending_alert_index = null;
 
+    protected bool $destroyed = false;
+
+    /** @var array<string, string> extra CSS fragments preserved across setViewFrame */
+    protected array $view_css = [];
+
+    /** @var array<string, TextAlignment> */
+    protected array $label_alignments = [];
+
+    /** @var array<string, array{x: int, y: int, h: int, w: int}> */
+    protected array $view_frames = [];
+
     public function __construct(
         string $window_name,
         int $pointer,
@@ -47,6 +58,18 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
 
     ) {
         parent::__construct($window_name, $pointer, $width, $height);
+
+        // GTK4 has no GtkWidget::destroy signal. close-request fires before
+        // the window is disposed; returning false lets GTK destroy it.
+        g_signal_connect($pointer, 'close-request', function (): bool {
+            $this->markDestroyed();
+            return false;
+        });
+    }
+
+    protected function markDestroyed(): void
+    {
+        $this->destroyed = true;
     }
 
     public function getChromePointer(): ?int
@@ -127,17 +150,129 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
 
     public function isClosed(): bool
     {
-        return !gtk_widget_get_visible($this->getPointer());
+        if ($this->destroyed) {
+            return true;
+        }
+
+        return ! gtk_widget_get_visible($this->getPointer());
     }
 
     public function close(): void
     {
+        if ($this->destroyed) {
+            return;
+        }
+
+        $this->markDestroyed();
         gtk_window_destroy($this->getPointer());
     }
 
     public function present(): void
     {
+        if ($this->destroyed) {
+            return;
+        }
+
         gtk_window_present($this->getPointer());
+    }
+
+    protected function nativeContentWidth(): int
+    {
+        if ($this->destroyed) {
+            return 0;
+        }
+
+        $content = $this->getContentPointer();
+        if (is_null($content) || $content === 0) {
+            return 0;
+        }
+
+        return gtk_widget_get_width($content);
+    }
+
+    protected function nativeContentHeight(): int
+    {
+        if ($this->destroyed) {
+            return 0;
+        }
+
+        $content = $this->getContentPointer();
+        if (is_null($content) || $content === 0) {
+            return 0;
+        }
+
+        return gtk_widget_get_height($content);
+    }
+
+    protected function applyViewSize(int $handle, int $w, int $h, ?string $name = null): void
+    {
+        gtk_widget_set_size_request($handle, $w, $h);
+        if (! is_null($name) && isset($this->view_css[$name])) {
+            gtk_widget_apply_css($handle, $this->view_css[$name].';');
+        }
+    }
+
+    protected function alignedContentX(int $boxX, int $boxW, int $natW, TextAlignment $alignment): int
+    {
+        if ($natW <= 0) {
+            return $boxX;
+        }
+
+        return match ($alignment) {
+            TextAlignment::LEFT => $boxX,
+            TextAlignment::CENTER => $boxX + intdiv($boxW - $natW, 2),
+            TextAlignment::RIGHT => $boxX + $boxW - $natW,
+        };
+    }
+
+    protected function placeLabel(string $name, int $x, int $y, int $h, int $w): void
+    {
+        $content = $this->getContentPointer();
+        if (is_null($content) || $content === 0) {
+            return;
+        }
+
+        $handle = $this->viewHandle($name);
+        gtk_widget_set_size_request($handle, -1, $h);
+        if (isset($this->view_css[$name])) {
+            gtk_widget_apply_css($handle, $this->view_css[$name].';');
+        }
+
+        $natW = gtk_widget_get_width($handle);
+        $align = $this->label_alignments[$name] ?? TextAlignment::LEFT;
+        $putX = $this->alignedContentX($x, $w, $natW, $align);
+        gtk_fixed_move($content, $handle, $putX, $this->contentY($y, $h));
+        $this->view_frames[$name] = ['x' => $x, 'y' => $y, 'h' => $h, 'w' => $w];
+    }
+
+    /**
+     * @throws WindowableException
+     */
+    public function setViewFrame(string $name, int $x, int $y, int $h, int $w): static
+    {
+        if ($this->destroyed) {
+            return $this;
+        }
+
+        if ($this->content_is_grid) {
+            throw new WindowableException('setViewFrame requires GtkFixed content, not GtkGrid.');
+        }
+
+        $content = $this->getContentPointer();
+        if (is_null($content) || $content === 0) {
+            throw new WindowableException("Window {$this->window_name} has no content view.");
+        }
+
+        $handle = $this->viewHandle($name);
+        if (isset($this->label_alignments[$name])) {
+            $this->placeLabel($name, $x, $y, $h, $w);
+            return $this;
+        }
+
+        $this->applyViewSize($handle, $w, $h, $name);
+        gtk_fixed_move($content, $handle, $x, $this->contentY($y, $h));
+
+        return $this;
     }
 
     /**
@@ -257,7 +392,7 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
             gtk_switch_set_active($handle, (bool) $addl_params['active']);
         }
 
-        gtk_widget_set_size_request($handle, $w, $h);
+        $this->applyViewSize($handle, $w, $h, $name);
         gtk_fixed_put($content, $handle, $x, $this->contentY($y, $h));
         $this->rememberView($name, $handle);
 
@@ -307,7 +442,7 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
 
         $title = (string) ($addl_params['title'] ?? $addl_params['text'] ?? $name);
         $handle = gtk_button_new_with_label($title);
-        gtk_widget_set_size_request($handle, $w, $h);
+        $this->applyViewSize($handle, $w, $h, $name);
         gtk_fixed_put($content, $handle, $x, $this->contentY($y, $h));
         $this->rememberView($name, $handle);
 
@@ -336,6 +471,10 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
     public function setLabelText(string $name, string $text): static
     {
         gtk_label_set_text($this->viewHandle($name), $text);
+        if (isset($this->view_frames[$name], $this->label_alignments[$name])) {
+            $frame = $this->view_frames[$name];
+            $this->placeLabel($name, $frame['x'], $frame['y'], $frame['h'], $frame['w']);
+        }
 
         return $this;
     }
@@ -363,16 +502,8 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
 
         $title = (string) ($addl_params['title'] ?? $addl_params['text'] ?? $name);
         $handle = gtk_label_new($title);
-
-        $alignment = $this->textAlignmentFrom($addl_params);
-        if (! is_null($alignment)) {
-            $xalign = match ($alignment) {
-                TextAlignment::LEFT => 0.0,
-                TextAlignment::CENTER => 0.5,
-                TextAlignment::RIGHT => 1.0,
-            };
-            gtk_label_set_xalign($handle, $xalign);
-        }
+        $alignment = $this->textAlignmentFrom($addl_params) ?? TextAlignment::LEFT;
+        $this->label_alignments[$name] = $alignment;
 
         $fontSize = $this->fontSizeFrom($addl_params);
         $fontWeight = $this->fontWeightFrom($addl_params);
@@ -385,12 +516,22 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
                 $cssWeight = ($fontWeight->value + 1) * 100;
                 $cssParts[] = "font-weight: {$cssWeight}";
             }
-            gtk_widget_apply_css($handle, implode('; ', $cssParts).';');
+            $this->view_css[$name] = implode('; ', $cssParts);
+            gtk_widget_apply_css($handle, $this->view_css[$name].';');
         }
 
-        gtk_widget_set_size_request($handle, $w, $h);
-        gtk_fixed_put($content, $handle, $x, $this->contentY($y, $h));
+        gtk_widget_set_size_request($handle, -1, $h);
         $this->rememberView($name, $handle);
+        $this->view_frames[$name] = ['x' => $x, 'y' => $y, 'h' => $h, 'w' => $w];
+        gtk_fixed_put($content, $handle, $x, $this->contentY($y, $h));
+        $this->placeLabel($name, $x, $y, $h, $w);
+        g_signal_connect($handle, 'map', function () use ($name): void {
+            if (! isset($this->view_frames[$name])) {
+                return;
+            }
+            $frame = $this->view_frames[$name];
+            $this->placeLabel($name, $frame['x'], $frame['y'], $frame['h'], $frame['w']);
+        });
 
         return $this;
     }
@@ -519,5 +660,15 @@ class GTKWindowSurface extends WindowSurface implements SurfaceContract
         }
 
         return $index;
+    }
+
+    public function toggleAboutMenuHook(): void
+    {
+        $this->menuAddItem('Help', 'About', 'a', 'about');
+    }
+
+    public function ownsAboutMenu(): bool
+    {
+        return true;
     }
 }
